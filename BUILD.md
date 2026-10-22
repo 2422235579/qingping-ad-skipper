@@ -4,7 +4,8 @@
 
 | 项 | 值 |
 | --- | --- |
-| 文件 | `dist/qingping-debug.apk` |
+| 文件 | Release **v1.4-opt.1** 的附件 `qingping-debug.apk` |
+| 下载 | <https://github.com/2422235579/qingping-ad-skipper/releases/download/v1.4-opt.1/qingping-debug.apk> |
 | 大小 | 5.7 MB (5978938 字节) |
 | SHA256 | `120B9A82B44D8C0736B3AE6F02947B156B5008DAD94257D511DB7A5DC06EDA6D` |
 | MD5 | `CBD7980F901A112F52D777B56588A7C9` |
