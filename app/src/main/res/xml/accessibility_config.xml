@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  无障碍服务配置
+
+  改动说明：
+  - 新增 flagIncludeNotImportantViews
+      很多广告 SDK 的"跳过"按钮挂在「对无障碍不重要」的容器里，
+      不加这个标志，控件树里干脆看不到它 → 漏拦。这是提升覆盖率最省事的一步。
+  - accessibilityEventTypes 保持 windowStateChanged + windowContentChanged
+      （前者抓"新窗口出现"，后者抓"广告延迟渲染完成"）
+  - canPerformGestures 留着：将来要做坐标点击兜底时需要它
+  - notificationTimeout 从 100ms 提到 300ms
+      两个事件类型都会触发，100ms 太密，纯属给主线程添压力；
+      真正的节流已经在代码里按包名做了。
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds|flagIncludeNotImportantViews"
+    android:canRetrieveWindowContent="true"
+    android:canPerformGestures="true"
+    android:notificationTimeout="300"
+    android:description="@string/accessibility_description"
+    android:summary="自动检测并关闭其他 APP 的开屏广告和误触跳转弹窗" />
