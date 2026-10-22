@@ -17,7 +17,7 @@ object SkipRules {
      */
     private val EXACT_TEXTS: Set<String> = hashSetOf(
         "跳过", "跳过广告", "广告跳过", "关闭广告", "立即跳过",
-        "跳过此广告", "跳过视频", "skip", "Skip", "SKIP", "跳过>", "跳过>", "跳过 »"
+        "跳过此广告", "跳过视频", "skip", "Skip", "SKIP", "跳过>", "跳过 »", "跳过广告>"
     )
 
     /**
@@ -33,20 +33,38 @@ object SkipRules {
         RegexOption.IGNORE_CASE
     )
 
-    /** 判断一段文案是不是跳过按钮 */
-    fun isSkipText(raw: CharSequence?): Boolean {
+    /** 判断一段文案是不是跳过按钮；[extra] 是用户自己加的文案 */
+    fun isSkipText(raw: CharSequence?, extra: Set<String> = emptySet()): Boolean {
         val text = raw?.toString()?.trim() ?: return false
         if (text.isEmpty() || text.length > 12) return false  // 太长的一定不是按钮
         if (text in EXACT_TEXTS) return true
+        if (text in extra) return true
         return COUNTDOWN_PATTERN.matches(text)
+    }
+
+    /**
+     * 「长得像跳过按钮，但没被规则命中」——用于诊断模式收集候选。
+     *
+     * 只在用户主动打开诊断时才用，命中后会连同截图描述一起记进
+     * [QPPreferences.candidates]，方便往规则表里补一行。
+     */
+    fun looksLikeCandidate(raw: CharSequence?): Boolean {
+        val text = raw?.toString()?.trim() ?: return false
+        if (text.isEmpty() || text.length > 16) return false
+        if (isSkipText(text)) return false  // 已命中的不算候选
+        val hasHint = text.contains("跳") || text.contains("关闭") || text.contains("略过") ||
+            text.contains("skip", ignoreCase = true) || text.contains("close", ignoreCase = true) ||
+            text.contains("×") || text.contains("✕")
+        if (!hasHint) return false
+        // 排除明显不是按钮的句子（"跳过此步骤可..."这类长文案长度已经挡住了）
+        return true
     }
 
     /**
      * 已知广告 SDK 的跳过按钮 resourceId。
      *
      * ⚠️ 这些 id 会随 SDK 版本变化，不必迷信它们 —— 它们只是「精确文字匹配」
-     * 之外的补充通道。要扩充的话，把 [QPAccessibilityService] 的 debug 开关打开，
-     * 日志里会打出「长得像跳过按钮但没被识别」的候选，从真实日志里加最靠谱。
+     * 之外的补充通道。
      */
     val SKIP_VIEW_IDS: List<String> = listOf(
         "com.qq.e.ads:id/skip",                        // 腾讯优量汇
@@ -54,6 +72,29 @@ object SkipRules {
         "com.bytedance.sdk.openadsdk:id/skip",         // 穿山甲
         "com.kwad.sdk:id/ksad_tv_skip"                 // 快手
     )
+
+    /**
+     * 广告 SDK 的 viewId 前缀。
+     *
+     * 用途：判断「这一屏确实有广告在渲染」。坐标兜底（盲点）**只在确认有广告时**
+     * 才允许触发一次 —— 否则就是纯粹瞎点，比不点更糟。
+     */
+    val AD_SDK_VIEW_PREFIXES: List<String> = listOf(
+        "com.qq.e.ads",
+        "com.bytedance.sdk.openadsdk",
+        "com.kwad.sdk",
+        "com.baidu.mobads",
+        "com.mbridge",
+        "com.mobvista",
+        "com.sigmob",
+        "com.anythink"
+    )
+
+    /** 这个 viewId 是不是来自已知广告 SDK */
+    fun isAdSdkView(viewId: String?): Boolean {
+        if (viewId.isNullOrEmpty()) return false
+        return AD_SDK_VIEW_PREFIXES.any { viewId.startsWith(it) }
+    }
 
     /** 这些包名不会被拦截（自己是第一个） */
     val IGNORE_PACKAGES: Set<String> = hashSetOf(
