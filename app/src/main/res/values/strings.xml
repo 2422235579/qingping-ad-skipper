@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">清屏</string>
+    <string name="accessibility_description">清屏会自动检测其他APP开屏广告中的"跳过"按钮并自动点击，同时拦截误触导致的自动跳转。不需要读取你的任何内容。</string>
+
+    <string name="status_not_enabled">无障碍服务未开启</string>
+    <string name="status_enabled">无障碍服务运行中</string>
+    <string name="btn_open_accessibility">去开启无障碍服务</string>
+    <string name="btn_usage_access">去授予使用情况权限</string>
+    <string name="btn_ignore_battery">加入电池优化白名单</string>
+    <string name="btn_notification_perm">授予通知权限</string>
+
+    <string name="total_blocked">累计拦截</string>
+    <string name="today_blocked">今日拦截</string>
+    <string name="per_app_stats">按APP统计</string>
+    <string name="empty_stats">暂无拦截记录，打开任意APP试试</string>
+    <string name="stats_not_enabled">请先开启无障碍服务</string>
+
+    <string name="notification_channel_name">清屏保活服务</string>
+    <string name="notification_title">清屏正在运行</string>
+    <string name="notification_text">正在为你拦截开屏广告</string>
+
+    <string name="blocked_splash">开屏广告</string>
+    <string name="blocked_jump">误触跳转</string>
+</resources>
