@@ -1,6 +1,8 @@
 package com.qingping.clear
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
+import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
@@ -32,15 +34,20 @@ import kotlinx.coroutines.launch
  *    原版对 `parent` / `grandParent` 只判断 `isClickable` 就点。如果父容器是铺满屏幕的
  *    广告 View，这一下**点开的正是广告**，把「跳过」变成了「点击广告」。
  *
- * 3. **文案匹配支持倒计时**。
- *    原版用 `text in SKIP_TEXTS` 精确相等，而真实广告按钮几乎都带数字（"跳过 3s"），
- *    导致大面积漏拦。现在走 [SkipRules.isSkipText]（精确 + 正则）。
+ * 3. **文案匹配支持倒计时**（见 [SkipRules.isSkipText]）。
  *
- * 4. **单飞（single-flight）**：同一包名同时只保留一条重试链，避免任务堆积。
- * 5. **只在自己包名是当前活动窗口时才动手**，避免在过期的控件树上瞎点。
- * 6. **尺寸判断改成相对屏幕比例**，折叠屏/平板上不再误判。
- * 7. 协程作用域挂在服务上，`onDestroy` 统一取消（原来每次 new 一个，泄漏）。
- * 8. 复用 `Rect`、限制遍历节点数，减少主线程压力。
+ * 4. **三条通道合并成一次遍历**：文案匹配 + 广告 SDK 探测 + 诊断候选收集，
+ *    不再为了不同目的反复爬同一棵树。
+ *
+ * 5. **坐标兜底（默认关闭）**：只在「确认这一屏存在广告 SDK 渲染」时才盲点右上角一次。
+ *    没有这个前提就盲点，等于拿用户的手指乱戳，比漏拦更糟。
+ *
+ * 6. **单飞（single-flight）**：同一包名同时只保留一条重试链。
+ *
+ * 7. **只在自己包名是当前活动窗口时才动手**，避免在过期的控件树上瞎点。
+ *
+ * 8. 尺寸判断改成相对屏幕比例；复用 `Rect`；限制遍历节点数。
+ * 9. 协程作用域挂在服务上，`onDestroy` 统一取消（原来每次 new 一个，泄漏）。
  */
 class QPAccessibilityService : AccessibilityService() {
 
@@ -62,9 +69,22 @@ class QPAccessibilityService : AccessibilityService() {
         /** 同一包名：内容变化后的冷却（这种事件最频繁） */
         private const val COOLDOWN_CONTENT_MS = 900L
 
+        /** 坐标兜底点击的位置（屏幕比例）：右上角，跳过按钮的常见位置 */
+        private const val FALLBACK_X_RATIO = 0.90f
+        private const val FALLBACK_Y_RATIO = 0.08f
+
         @Volatile
         var instance: QPAccessibilityService? = null
             private set
+    }
+
+    /** 一次遍历的收集结果 */
+    private class ScanContext(
+        val extraTexts: Set<String>,
+        val diagnose: Boolean
+    ) {
+        var adSdkDetected = false
+        var clicked = false
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -86,6 +106,13 @@ class QPAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+
+        // 记下「无障碍确实是开着的」，给保活服务做「被关掉」的判断依据
+        QPPreferences.get(this).apply {
+            accessibilityWasOn = true
+            accessibilityOffNotified = false
+        }
+
         Log.i(TAG, "无障碍服务已连接")
         KeepAliveService.start(this)
     }
@@ -139,6 +166,7 @@ class QPAccessibilityService : AccessibilityService() {
         if (rootPkg != null && rootPkg != pkg) return false
 
         ensureScreenSize()
+        val prefs = QPPreferences.get(this)
 
         // 通道 1：已知广告 SDK 的 resourceId
         for (id in SkipRules.SKIP_VIEW_IDS) {
@@ -152,33 +180,68 @@ class QPAccessibilityService : AccessibilityService() {
             }
         }
 
-        // 通道 2：文案（精确 + 倒计时正则）
+        // 通道 2：一次遍历同时做三件事
         val counter = intArrayOf(0)
-        if (searchByText(root, 0, counter)) {
+        val ctx = ScanContext(prefs.customSkipTexts, prefs.diagnoseEnabled)
+        scanTree(root, 0, counter, ctx)
+
+        if (ctx.clicked) {
             Log.i(TAG, "拦截 $pkg（文案）")
             recordBlock(pkg)
             return true
         }
+
+        // 通道 3：坐标兜底 —— 必须两个条件同时成立才允许
+        //   a) 用户显式开启（默认关）
+        //   b) 这一屏确实存在广告 SDK 的 view
+        if (prefs.coordinateFallbackEnabled && ctx.adSdkDetected) {
+            if (tapFallbackPoint()) {
+                Log.i(TAG, "拦截 $pkg（坐标兜底，已检测到广告 SDK）")
+                recordBlock(pkg)
+                return true
+            }
+        }
+
         return false
     }
 
-    /** 深度优先找文案匹配的节点 */
-    private fun searchByText(
+    /** 单次深度优先遍历：文案匹配 + 广告 SDK 探测 + 诊断候选 */
+    private fun scanTree(
         node: AccessibilityNodeInfo,
         depth: Int,
-        counter: IntArray
-    ): Boolean {
-        if (depth > SkipRules.MAX_DEPTH) return false
-        if (++counter[0] > SkipRules.MAX_NODES) return false
+        counter: IntArray,
+        ctx: ScanContext
+    ) {
+        if (ctx.clicked) return
+        if (depth > SkipRules.MAX_DEPTH) return
+        if (++counter[0] > SkipRules.MAX_NODES) return
 
-        if (SkipRules.isSkipText(node.text) && safeClick(node)) return true
+        // 广告 SDK 探测（viewIdResourceName 依赖 flagReportViewIds）
+        if (!ctx.adSdkDetected && SkipRules.isAdSdkView(node.viewIdResourceName)) {
+            ctx.adSdkDetected = true
+        }
+
+        val text = node.text
+        if (text != null) {
+            if (SkipRules.isSkipText(text, ctx.extraTexts)) {
+                if (safeClick(node)) {
+                    ctx.clicked = true
+                    return
+                }
+            } else if (ctx.diagnose && SkipRules.looksLikeCandidate(text)) {
+                // 只记没命中但像按钮的文案，供后续扩充规则
+                if (QPPreferences.get(this).rememberCandidate(text.toString())) {
+                    Log.i(TAG, "诊断候选: '$text'")
+                }
+            }
+        }
 
         val childCount = node.childCount
         for (i in 0 until childCount) {
             val child = node.getChild(i) ?: continue
-            if (searchByText(child, depth + 1, counter)) return true
+            scanTree(child, depth + 1, counter, ctx)
+            if (ctx.clicked) return
         }
-        return false
     }
 
     /**
@@ -210,6 +273,28 @@ class QPAccessibilityService : AccessibilityService() {
             return false
         }
         return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    }
+
+    /**
+     * 坐标兜底：在右上角轻点一下。
+     *
+     * ⚠️ 这是**下策**：控件树里看不到按钮时唯一还能做的动作，但它是"盲点"。
+     * 所以调用点有两道闸门（用户开关 + 广告 SDK 存在），并且一次扫描只试一次。
+     */
+    private fun tapFallbackPoint(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
+        if (screenW <= 0 || screenH <= 0) return false
+        return try {
+            val x = screenW * FALLBACK_X_RATIO
+            val y = screenH * FALLBACK_Y_RATIO
+            val path = Path().apply { moveTo(x, y) }
+            val stroke = GestureDescription.StrokeDescription(path, 0L, 40L)
+            val gesture = GestureDescription.Builder().addStroke(stroke).build()
+            dispatchGesture(gesture, null, null)
+        } catch (e: Exception) {
+            Log.w(TAG, "坐标兜底手势失败", e)
+            false
+        }
     }
 
     private fun ensureScreenSize() {
