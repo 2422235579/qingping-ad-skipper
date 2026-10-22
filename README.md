@@ -1,5 +1,21 @@
 # 清屏 - 安卓开屏广告拦截器
 
+## 零、直接装（不想自己编译）
+
+| | |
+| --- | --- |
+| 安装包 | [`dist/qingping-debug.apk`](dist/qingping-debug.apk)（5.7 MB）|
+| SHA256 | `120B9A82B44D8C0736B3AE6F02947B156B5008DAD94257D511DB7A5DC06EDA6D` |
+| 适用 | Android 8.0+（minSdk 26）|
+| 签名 | **debug 签名** |
+
+> ⚠️ **装之前先卸载旧版**。debug 签名每台机器不同，覆盖安装会报
+> `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。卸载会丢拦截统计（`allowBackup=false`）。
+>
+> 构建环境、复现命令、踩过的坑见 **[BUILD.md](BUILD.md)**。
+
+---
+
 ## 一、实现原理
 
 核心技术是 **AccessibilityService（无障碍服务）**，和"李跳跳""一指禅"等同款方案。
