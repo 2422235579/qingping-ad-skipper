@@ -1,5 +1,6 @@
 package com.qingping.clear
 
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -114,7 +115,68 @@ class MainActivity : AppCompatActivity() {
         }
 
         showManufacturerGuide()
+        setupDiagnosticsEntry()
         observeStats()
+    }
+
+    // ---------- 高级设置（长按状态栏） ----------
+    // 故意不新增界面元素：改 layout 会带来无法本地验证的风险，
+    // 长按入口对普通用户不可见，也不会误触。
+
+    private fun setupDiagnosticsEntry() {
+        tvStatus.setOnLongClickListener {
+            try {
+                showDiagnosticsDialog()
+            } catch (e: Exception) {
+                Log.w(TAG, "打开高级设置失败", e)
+            }
+            true
+        }
+    }
+
+    private fun showDiagnosticsDialog() {
+        val prefs = QPPreferences.get(this)
+
+        val options = arrayOf(
+            "诊断模式（记录没被识别的按钮文案）",
+            "坐标兜底（有风险，默认关）"
+        )
+        val checked = booleanArrayOf(prefs.diagnoseEnabled, prefs.coordinateFallbackEnabled)
+
+        AlertDialog.Builder(this)
+            .setTitle("高级设置")
+            .setMultiChoiceItems(options, checked) { _, which, isChecked ->
+                when (which) {
+                    0 -> prefs.diagnoseEnabled = isChecked
+                    1 -> prefs.coordinateFallbackEnabled = isChecked
+                }
+            }
+            .setPositiveButton("看候选") { _, _ -> showCandidates(prefs) }
+            .setNeutralButton("关闭", null)
+            .show()
+    }
+
+    private fun showCandidates(prefs: QPPreferences) {
+        val list = prefs.candidates()
+        if (list.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setTitle("诊断候选")
+                .setMessage("还没有候选。\n\n打开诊断模式后，去刷几个带开屏广告的 App，\n没被识别的按钮文案会出现在这里。")
+                .setPositiveButton("好", null)
+                .show()
+            return
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("诊断候选（${list.size}）")
+            .setItems(list.toTypedArray()) { _, which ->
+                // 点一条就直接加进自定义规则
+                prefs.addCustomText(list[which])
+                Toast.makeText(this, "已加入规则：${list[which]}", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("清空") { _, _ -> prefs.clearCandidates() }
+            .setPositiveButton("关闭", null)
+            .show()
     }
 
     // ---------- 统计 ----------
