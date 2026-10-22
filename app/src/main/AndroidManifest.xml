@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- 无障碍服务：核心拦截能力，必须用户手动在设置里开启 -->
+    <!-- 使用情况统计：判断当前前台是哪个APP，用于按APP统计 -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- 开机自启 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- 前台保活服务 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- Android 13+ 通知权限（前台服务需要发通知） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      已移除 SYSTEM_ALERT_WINDOW：本方案并未实现悬浮窗（原注释写的是"预留"）。
+      一个"能读全屏幕、能模拟点击"的无障碍应用，多要一个悬浮窗权限
+      对用户是可感知的风险，而且市场审核也容易被卡。
+      将来真要用悬浮窗时再加回来。
+    -->
+
+    <!-- 请求忽略电池优化（厂商白名单） -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!--
+      allowBackup 改为 false：拦截记录里带有「用户在什么时候用过哪些 App」的信息，
+      没有理由让它进云备份 / 被 adb backup 导出。
+    -->
+    <application
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="清屏"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.QingPing">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 核心：无障碍服务 -->
+        <service
+            android:name=".QPAccessibilityService"
+            android:exported="true"
+            android:label="清屏-开屏广告拦截"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_config" />
+        </service>
+
+        <!-- 保活前台服务 -->
+        <service
+            android:name=".KeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="ad_blocking_accessibility_keepalive" />
+        </service>
+
+        <!-- 开机启动接收器 -->
+        <!--
+          exported 改为 false：BOOT_COMPLETED / MY_PACKAGE_REPLACED 都是系统广播，
+          系统能给非 exported 的接收器投递，所以不需要对外暴露。
+          原来 exported="true" 意味着任何应用都能给它发广播。
+        -->
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+
+</manifest>
