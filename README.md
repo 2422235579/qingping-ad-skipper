@@ -4,10 +4,13 @@
 
 | | |
 | --- | --- |
-| 安装包 | [`dist/qingping-debug.apk`](dist/qingping-debug.apk)（5.7 MB）|
+| 安装包 | **[⬇ Releases · v1.4-opt.1](https://github.com/2422235579/qingping-ad-skipper/releases/download/v1.4-opt.1/qingping-debug.apk)**（5.7 MB）|
 | SHA256 | `120B9A82B44D8C0736B3AE6F02947B156B5008DAD94257D511DB7A5DC06EDA6D` |
 | 适用 | Android 8.0+（minSdk 26）|
 | 签名 | **debug 签名** |
+
+> APK 放在 **Releases** 里而不是仓库目录中：二进制文件提交进 git 会永久占用
+> clone 体积，放 Release 附件更合适。
 
 > ⚠️ **装之前先卸载旧版**。debug 签名每台机器不同，覆盖安装会报
 > `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。卸载会丢拦截统计（`allowBackup=false`）。
